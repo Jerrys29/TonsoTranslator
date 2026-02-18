@@ -1,26 +1,27 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { VoiceOption, AppSettings, AnalysisResult } from '../types';
+import { VoiceOption, AppSettings, AnalysisResult, TranscriptChunk } from '../types';
 import { AVAILABLE_VOICES } from '../constants';
-import { decodeAudio } from '../services/geminiService';
+import { generatePreview, decodeAudio } from '../services/geminiService';
 
 interface VoiceStudioProps {
   settings: AppSettings;
   updateSettings: (s: Partial<AppSettings>) => void;
   analysis: AnalysisResult;
-  onPreview: (voice: VoiceOption) => Promise<string | null>;
+  chunks: TranscriptChunk[];
   onConfirm: () => void;
   isGeneratingPreview: boolean;
+  setIsGeneratingPreview: (v: boolean) => void;
 }
 
 const VoiceStudio: React.FC<VoiceStudioProps> = ({
   settings,
   updateSettings,
   analysis,
-  onPreview,
+  chunks,
   onConfirm,
-  isGeneratingPreview
+  isGeneratingPreview,
+  setIsGeneratingPreview,
 }) => {
-  const [activePreviewUrl, setActivePreviewUrl] = useState<string | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
@@ -31,7 +32,7 @@ const VoiceStudio: React.FC<VoiceStudioProps> = ({
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     }
     return () => {
-        audioContextRef.current?.close();
+      audioContextRef.current?.close();
     };
   }, []);
 
@@ -39,14 +40,20 @@ const VoiceStudio: React.FC<VoiceStudioProps> = ({
     // Stop current
     if (sourceRef.current) sourceRef.current.stop();
     setIsPlaying(false);
-    
+
     // Select the voice
     updateSettings({ selectedVoiceId: voice.id });
+    setIsGeneratingPreview(true);
 
-    // Request new preview audio
-    const audioBase64 = await onPreview(voice);
-    if (audioBase64 && audioContextRef.current) {
-      try {
+    try {
+      // Use the first chunk's text as preview sample
+      const sampleText = chunks.length > 0
+        ? chunks[0].fullText
+        : "Bonjour, ceci est un test de la voix sélectionnée.";
+
+      const audioBase64 = await generatePreview(sampleText, settings, analysis, voice);
+
+      if (audioBase64 && audioContextRef.current) {
         const buffer = await decodeAudio(audioBase64, audioContextRef.current);
         const source = audioContextRef.current.createBufferSource();
         source.buffer = buffer;
@@ -55,14 +62,14 @@ const VoiceStudio: React.FC<VoiceStudioProps> = ({
         source.start(0);
         sourceRef.current = source;
         setIsPlaying(true);
-      } catch (e) {
-        console.error("Preview playback failed", e);
       }
+    } catch (e) {
+      console.error("Preview playback failed", e);
+    } finally {
+      setIsGeneratingPreview(false);
     }
   };
 
-  // Filter voices based on detected gender? Or just show all.
-  // Showing all gives user more control.
   const voices = AVAILABLE_VOICES;
 
   return (
@@ -74,23 +81,34 @@ const VoiceStudio: React.FC<VoiceStudioProps> = ({
               <span className="text-indigo-400">🎙️</span> Studio Vocal
             </h2>
             <p className="text-slate-400 text-sm mt-1">
-              {analysis.detectedGender === 'male' ? '👤 Homme' : '👤 Femme'} détecté • {analysis.tone}
+              {analysis.detectedGender === 'male' ? '👤 Homme' : '👤 Femme'} détecté • {analysis.tone} • {analysis.languageRegister}
             </p>
           </div>
           {isGeneratingPreview && (
-             <div className="flex items-center gap-2 text-cyan-400 text-sm font-medium animate-pulse">
-               <div className="w-2 h-2 bg-cyan-400 rounded-full"></div>
-               Génération...
-             </div>
+            <div className="flex items-center gap-2 text-cyan-400 text-sm font-medium animate-pulse">
+              <div className="w-2 h-2 bg-cyan-400 rounded-full"></div>
+              Génération...
+            </div>
           )}
         </div>
 
+        {/* Context Summary Card */}
+        <div className="bg-slate-900/50 rounded-xl p-4 mb-6 border border-slate-800">
+          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Contexte Détecté</h4>
+          <p className="text-sm text-slate-300">{analysis.contextSummary}</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            <span className="text-xs bg-indigo-500/20 text-indigo-300 px-2 py-1 rounded-full">{analysis.subjectMatter}</span>
+            <span className="text-xs bg-cyan-500/20 text-cyan-300 px-2 py-1 rounded-full">{analysis.targetAudience}</span>
+            <span className="text-xs bg-purple-500/20 text-purple-300 px-2 py-1 rounded-full">{analysis.tone}</span>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          
+
           {/* Voice List */}
           <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
             <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Voix Disponibles</h3>
-            
+
             {voices.map((voice) => {
               const isActive = settings.selectedVoiceId === voice.id;
               return (
@@ -98,16 +116,14 @@ const VoiceStudio: React.FC<VoiceStudioProps> = ({
                   key={voice.id}
                   onClick={() => !isGeneratingPreview && handlePreview(voice)}
                   disabled={isGeneratingPreview}
-                  className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${
-                    isActive 
-                      ? 'bg-indigo-600/20 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]' 
+                  className={`w-full flex items-center justify-between p-4 rounded-xl border transition-all ${isActive
+                      ? 'bg-indigo-600/20 border-indigo-500 shadow-[0_0_15px_rgba(99,102,241,0.2)]'
                       : 'bg-slate-900 border-slate-700 hover:bg-slate-700'
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center gap-4">
-                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${
-                      voice.type === 'cloned' ? 'bg-gradient-to-br from-purple-500 to-pink-500' : 'bg-slate-700'
-                    }`}>
+                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-lg ${voice.type === 'cloned' ? 'bg-gradient-to-br from-purple-500 to-pink-500' : 'bg-slate-700'
+                      }`}>
                       {voice.type === 'cloned' ? '🧬' : (voice.gender === 'male' ? '👨' : '👩')}
                     </div>
                     <div className="text-left">
@@ -119,16 +135,16 @@ const VoiceStudio: React.FC<VoiceStudioProps> = ({
                       </div>
                     </div>
                   </div>
-                  
+
                   {isActive && isPlaying ? (
-                     <div className="flex gap-1 items-end h-4">
-                        <div className="w-1 bg-indigo-400 animate-[pulse_0.6s_infinite] h-2"></div>
-                        <div className="w-1 bg-indigo-400 animate-[pulse_0.8s_infinite] h-4"></div>
-                        <div className="w-1 bg-indigo-400 animate-[pulse_0.5s_infinite] h-3"></div>
-                     </div>
+                    <div className="flex gap-1 items-end h-4">
+                      <div className="w-1 bg-indigo-400 rounded-full animate-eq-bar" style={{ animationDelay: '0s', height: '8px' }}></div>
+                      <div className="w-1 bg-indigo-400 rounded-full animate-eq-bar" style={{ animationDelay: '0.2s', height: '16px' }}></div>
+                      <div className="w-1 bg-indigo-400 rounded-full animate-eq-bar" style={{ animationDelay: '0.1s', height: '12px' }}></div>
+                    </div>
                   ) : (
                     <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-400">
-                       ▶
+                      ▶
                     </div>
                   )}
                 </button>
@@ -136,38 +152,40 @@ const VoiceStudio: React.FC<VoiceStudioProps> = ({
             })}
           </div>
 
-          {/* Visualization / Info */}
+          {/* Preview / Info Panel */}
           <div className="flex flex-col justify-between bg-slate-900/50 rounded-xl p-6 border border-slate-800">
             <div>
-               <h3 className="text-sm font-semibold text-white mb-4">Prévisualisation</h3>
-               <div className="w-full h-32 bg-black/40 rounded-lg flex items-center justify-center border border-slate-800 relative overflow-hidden group">
-                  {isPlaying ? (
-                    <div className="flex items-center gap-1">
-                      {[...Array(20)].map((_, i) => (
-                        <div 
-                          key={i} 
-                          className="w-1 bg-gradient-to-t from-cyan-500 to-indigo-500 rounded-full"
-                          style={{
-                            height: `${Math.random() * 100}%`,
-                            animation: `pulse 0.${5 + i%5}s infinite`
-                          }}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-slate-600 text-sm">Cliquez sur une voix pour écouter</span>
-                  )}
-               </div>
-               <p className="text-xs text-slate-500 mt-3 text-center">
-                 Le clonage analyse le timbre et la prosodie de la vidéo source pour sélectionner le modèle le plus proche.
-               </p>
+              <h3 className="text-sm font-semibold text-white mb-4">Prévisualisation</h3>
+              <div className="w-full h-32 bg-black/40 rounded-lg flex items-center justify-center border border-slate-800 relative overflow-hidden">
+                {isPlaying ? (
+                  <div className="flex items-center gap-1">
+                    {[...Array(20)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="w-1 bg-gradient-to-t from-cyan-500 to-indigo-500 rounded-full animate-eq-bar"
+                        style={{
+                          height: `${20 + Math.random() * 80}%`,
+                          animationDelay: `${i * 0.05}s`,
+                          animationDuration: `${0.4 + Math.random() * 0.4}s`,
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <span className="text-slate-600 text-sm">Cliquez sur une voix pour écouter</span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-3 text-center">
+                La voix sera utilisée pour doubler les {chunks.length} segments de la vidéo.
+              </p>
             </div>
 
             <button
               onClick={onConfirm}
-              className="w-full mt-6 bg-green-600 hover:bg-green-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-green-900/20 transition-all flex items-center justify-center gap-2"
+              disabled={isGeneratingPreview}
+              className="w-full mt-6 bg-green-600 hover:bg-green-500 disabled:bg-slate-700 disabled:cursor-not-allowed text-white font-bold py-4 rounded-xl shadow-lg shadow-green-900/20 transition-all flex items-center justify-center gap-2"
             >
-              <span>Lancer la vidéo complète</span>
+              <span>Lancer la traduction complète</span>
               <span className="text-xl">🚀</span>
             </button>
           </div>

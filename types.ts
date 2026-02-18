@@ -1,4 +1,4 @@
-export type LanguageCode = 'en' | 'fr' | 'es' | 'de' | 'ja' | 'ar' | 'pt';
+export type LanguageCode = 'en' | 'fr' | 'es' | 'de' | 'ja' | 'ar' | 'pt' | 'zh' | 'ru' | 'ko' | 'it' | 'hi' | 'tr' | 'pl' | 'nl';
 
 export interface Language {
   code: LanguageCode;
@@ -11,7 +11,7 @@ export interface VoiceOption {
   name: string;
   gender: 'male' | 'female';
   type: 'cloned' | 'synthetic';
-  geminiVoiceName: string; // Map to valid Gemini voice names
+  geminiVoiceName: string;
 }
 
 export interface AppSettings {
@@ -24,34 +24,89 @@ export interface AppSettings {
 
 export enum ProcessingState {
   IDLE = 'IDLE',
-  ANALYZING_METADATA = 'ANALYZING_METADATA', // Language detection + Context
-  WAITING_USER_INPUT = 'WAITING_USER_INPUT', // Explicit content warning
-  VOICE_STUDIO = 'VOICE_STUDIO', // Voice selection & Preview
+  PREVIEWING_VIDEO = 'PREVIEWING_VIDEO',   // Showing thumbnail preview before starting
+  FETCHING_TRANSCRIPT = 'FETCHING_TRANSCRIPT',
+  ANALYZING_METADATA = 'ANALYZING_METADATA',
+  WAITING_USER_INPUT = 'WAITING_USER_INPUT',
+  VOICE_STUDIO = 'VOICE_STUDIO',
   GENERATING_PREVIEW = 'GENERATING_PREVIEW',
-  TRANSLATING_FULL = 'TRANSLATING_FULL',
+  TRANSLATING_SEGMENTS = 'TRANSLATING_SEGMENTS',
   READY_TO_PLAY = 'READY_TO_PLAY',
   PLAYING = 'PLAYING',
+  PAUSED = 'PAUSED',
   ERROR = 'ERROR'
 }
 
+// ── Video Metadata (from oEmbed) ──
+export interface VideoMetadata {
+  videoId: string;
+  title: string;
+  channelName: string;
+  thumbnailUrl: string;
+  thumbnailFallback: string;
+}
+
+// ── YouTube Transcript ──
+export interface TranscriptSegment {
+  text: string;
+  offset: number;   // start time in seconds
+  duration: number;  // duration in seconds
+}
+
+// ── Grouped segments for coherent translation ──
+export interface TranscriptChunk {
+  id: number;
+  segments: TranscriptSegment[];
+  startTime: number;  // start of first segment
+  endTime: number;    // end of last segment
+  fullText: string;   // concatenated text of all segments
+}
+
+// ── Translated result per chunk ──
+export interface TranslatedChunk {
+  id: number;
+  startTime: number;
+  endTime: number;
+  originalText: string;
+  translatedText: string;
+  audioBase64: string | null;
+  audioDuration: number;
+}
+
+// ── Subtitle display ──
 export interface SubtitleChunk {
-  id: string;
+  id: number;
   startTime: number;
   endTime: number;
   text: string;
 }
 
+// ── Full translation result ──
 export interface TranslationResult {
-  originalText: string;
-  translatedText: string;
-  audioBase64: string | null;
-  duration: number;
+  chunks: TranslatedChunk[];
+  subtitles: SubtitleChunk[];
+  totalDuration: number;
 }
 
+// ── Progress tracking ──
+export interface TranslationProgress {
+  currentChunk: number;
+  totalChunks: number;
+  percentage: number;
+  currentText: string;
+  phase: 'translating' | 'generating_audio';
+}
+
+// ── Context analysis ──
 export interface AnalysisResult {
   detectedLanguage: string;
   detectedGender: 'male' | 'female';
   hasExplicitContent: boolean;
   contextSummary: string;
   tone: string;
+  subjectMatter: string;
+  targetAudience: string;
+  languageRegister: string;
+  culturalReferences: string;
+  keyTerminology: string[];
 }

@@ -8,12 +8,20 @@ export const SUPPORTED_LANGUAGES: Language[] = [
   { code: 'ja', name: 'Japonais', flag: '🇯🇵' },
   { code: 'ar', name: 'Arabe', flag: '🇸🇦' },
   { code: 'pt', name: 'Portugais', flag: '🇵🇹' },
+  { code: 'zh', name: 'Chinois', flag: '🇨🇳' },
+  { code: 'ru', name: 'Russe', flag: '🇷🇺' },
+  { code: 'ko', name: 'Coréen', flag: '🇰🇷' },
+  { code: 'it', name: 'Italien', flag: '🇮🇹' },
+  { code: 'hi', name: 'Hindi', flag: '🇮🇳' },
+  { code: 'tr', name: 'Turc', flag: '🇹🇷' },
+  { code: 'pl', name: 'Polonais', flag: '🇵🇱' },
+  { code: 'nl', name: 'Néerlandais', flag: '🇳🇱' },
 ];
 
 export const AVAILABLE_VOICES: VoiceOption[] = [
-  { id: 'cloned-v1', name: 'Voix Clonée (Originale)', gender: 'male', type: 'cloned', geminiVoiceName: 'Fenrir' }, // Simulating clone with deep voice
-  { id: 'syn-f-1', name: 'Sarah (Synthétique)', gender: 'female', type: 'synthetic', geminiVoiceName: 'Kore' },
-  { id: 'syn-m-1', name: 'Thomas (Synthétique)', gender: 'male', type: 'synthetic', geminiVoiceName: 'Puck' },
+  { id: 'cloned-v1', name: 'Voix Clonée (Originale)', gender: 'male', type: 'cloned', geminiVoiceName: 'Fenrir' },
+  { id: 'syn-f-1', name: 'Sarah (Naturelle)', gender: 'female', type: 'synthetic', geminiVoiceName: 'Kore' },
+  { id: 'syn-m-1', name: 'Thomas (Dynamique)', gender: 'male', type: 'synthetic', geminiVoiceName: 'Puck' },
   { id: 'syn-f-2', name: 'Emma (Douce)', gender: 'female', type: 'synthetic', geminiVoiceName: 'Zephyr' },
   { id: 'syn-m-2', name: 'Marcus (Grave)', gender: 'male', type: 'synthetic', geminiVoiceName: 'Charon' },
 ];
@@ -26,15 +34,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showSubtitles: true,
 };
 
-// Mock transcript extended for demo
-export const MOCK_TRANSCRIPT = `
-Hey guys, what's up! Welcome back to the channel. 
-Today, we're gonna talk about something completely insane. 
-Honestly, this tech is simpler than it looks, but it's gonna blow your mind.
-Usually, people screw this up immediately, but I'm gonna show you the real deal.
-Wait, did you see that? Holy sh*t, that was fast!
-Let's dive right in and break this down, piece by piece.
-`;
-
-export const GEMINI_TRANSLATION_MODEL = 'gemini-3-flash-preview';
+export const GEMINI_TRANSLATION_MODEL = 'gemini-2.5-flash-preview-05-20';
 export const GEMINI_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
+
+// Chunk grouping settings
+export const CHUNK_MAX_DURATION_SEC = 15; // Max seconds per chunk for translation
+export const CHUNK_MIN_DURATION_SEC = 3;  // Min seconds to avoid tiny chunks
