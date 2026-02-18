@@ -26,19 +26,25 @@ const VoiceStudio: React.FC<VoiceStudioProps> = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
-  // Initialize Audio
-  useEffect(() => {
-    if (!audioContextRef.current) {
+  // Get or create a valid AudioContext (recreate if closed)
+  const getAudioContext = (): AudioContext => {
+    if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
       audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 24000 });
     }
+    return audioContextRef.current;
+  };
+
+  // Cleanup on unmount
+  useEffect(() => {
     return () => {
-      audioContextRef.current?.close();
+      try { sourceRef.current?.stop(); } catch { /* already stopped */ }
+      try { audioContextRef.current?.close(); } catch { /* already closed */ }
     };
   }, []);
 
   const handlePreview = async (voice: VoiceOption) => {
-    // Stop current
-    if (sourceRef.current) sourceRef.current.stop();
+    // Stop current playback
+    try { sourceRef.current?.stop(); } catch { /* already stopped */ }
     setIsPlaying(false);
 
     // Select the voice
@@ -53,11 +59,13 @@ const VoiceStudio: React.FC<VoiceStudioProps> = ({
 
       const audioBase64 = await generatePreview(sampleText, settings, analysis, voice);
 
-      if (audioBase64 && audioContextRef.current) {
-        const buffer = await decodeAudio(audioBase64, audioContextRef.current);
-        const source = audioContextRef.current.createBufferSource();
+      if (audioBase64) {
+        const ctx = getAudioContext();
+        if (ctx.state === 'suspended') await ctx.resume();
+        const buffer = await decodeAudio(audioBase64, ctx);
+        const source = ctx.createBufferSource();
         source.buffer = buffer;
-        source.connect(audioContextRef.current.destination);
+        source.connect(ctx.destination);
         source.onended = () => setIsPlaying(false);
         source.start(0);
         sourceRef.current = source;
