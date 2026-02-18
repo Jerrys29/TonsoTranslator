@@ -29,7 +29,7 @@ export function viteApiPlugin(): Plugin {
                     }
 
                     try {
-                        const imgUrl = `https://img.youtube.com/vi/${videoId}/${quality}.jpg`;
+                        const imgUrl = `https://i.ytimg.com/vi/${videoId}/${quality}.jpg`;
                         const imgData = await httpsGetBinary(imgUrl);
                         res.statusCode = 200;
                         res.setHeader('Content-Type', 'image/jpeg');

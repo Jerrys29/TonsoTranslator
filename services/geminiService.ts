@@ -8,6 +8,31 @@ import { GEMINI_TRANSLATION_MODEL, GEMINI_TTS_MODEL, SUPPORTED_LANGUAGES } from 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // ═════════════════════════════════════════════════════════════
+// UTILITY: Auto-retry on rate limit (429) errors
+// ═════════════════════════════════════════════════════════════
+async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      const status = error?.status || error?.code || error?.httpErrorCode;
+      const isRateLimit = status === 429 || error?.message?.includes('RESOURCE_EXHAUSTED') || error?.message?.includes('429');
+
+      if (isRateLimit && attempt < maxRetries) {
+        // Extract retry delay from error or default to 60s
+        const retryMatch = error?.message?.match(/retry in (\d+)/i);
+        const waitSec = retryMatch ? parseInt(retryMatch[1]) + 5 : 60;
+        console.warn(`[Gemini] Rate limited. Waiting ${waitSec}s before retry ${attempt + 1}/${maxRetries}...`);
+        await new Promise(r => setTimeout(r, waitSec * 1000));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Max retries exceeded');
+}
+
+// ═════════════════════════════════════════════════════════════
 // STEP 1: Deep Context Analysis
 // Analyzes the FULL transcript to understand context, tone,
 // cultural references, terminology — BEFORE any translation.
@@ -15,7 +40,7 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const analyzeContext = async (fullTranscript: string): Promise<AnalysisResult> => {
   try {
-    const response = await ai.models.generateContent({
+    const response = await withRetry(() => ai.models.generateContent({
       model: GEMINI_TRANSLATION_MODEL,
       contents: `Tu es un expert en analyse linguistique et culturelle. Analyse en profondeur ce transcript vidéo.
 
@@ -58,7 +83,7 @@ Analyse :
           ],
         },
       },
-    });
+    }));
 
     const result = JSON.parse(response.text || '{}');
     return {
@@ -136,10 +161,10 @@ INSTRUCTIONS DE TRADUCTION :
 
 Retourne UNIQUEMENT le texte traduit, sans guillemets ni explications.`;
 
-  const response = await ai.models.generateContent({
+  const response = await withRetry(() => ai.models.generateContent({
     model: GEMINI_TRANSLATION_MODEL,
     contents: prompt,
-  });
+  }));
 
   return (response.text || "").trim();
 };
@@ -153,7 +178,7 @@ const generateTTS = async (
   voice: VoiceOption
 ): Promise<{ audioBase64: string | null; duration: number }> => {
   try {
-    const ttsResponse = await ai.models.generateContent({
+    const ttsResponse = await withRetry(() => ai.models.generateContent({
       model: GEMINI_TTS_MODEL,
       contents: [{ parts: [{ text }] }],
       config: {
@@ -164,7 +189,7 @@ const generateTTS = async (
           },
         },
       },
-    });
+    }));
 
     const audioBase64 = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
 
@@ -263,10 +288,10 @@ ${settings.censureExplicit ? 'Censure les mots explicites.' : 'Conserve le langa
 Texte : "${sampleText}"
 Retourne UNIQUEMENT la traduction.`;
 
-  const translationResponse = await ai.models.generateContent({
+  const translationResponse = await withRetry(() => ai.models.generateContent({
     model: GEMINI_TRANSLATION_MODEL,
     contents: prompt,
-  });
+  }));
 
   const translatedText = (translationResponse.text || "").trim();
 

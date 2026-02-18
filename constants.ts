@@ -34,7 +34,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showSubtitles: true,
 };
 
-export const GEMINI_TRANSLATION_MODEL = 'gemini-2.5-flash-preview-05-20';
+export const GEMINI_TRANSLATION_MODEL = 'gemini-2.5-flash';
 export const GEMINI_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 
 // Chunk grouping settings
