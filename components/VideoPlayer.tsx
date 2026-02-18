@@ -24,7 +24,10 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
   // Initialize Audio Context
   useEffect(() => {
     if (!audioContextRef.current) {
-      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      // Gemini TTS uses 24kHz sample rate
+      audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+        sampleRate: 24000
+      });
     }
     return () => {
       audioContextRef.current?.close();
@@ -47,16 +50,33 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
     if (!audioContextRef.current) return;
     
     try {
-      // Decode audio
+      // 1. Decode Base64 string to Uint8Array
       const binaryString = atob(base64);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
       for (let i = 0; i < len; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
-      const audioBuffer = await audioContextRef.current.decodeAudioData(bytes.buffer);
 
-      // Create Source
+      // 2. Convert raw PCM (16-bit, 24kHz, Mono) to AudioBuffer
+      // NOTE: Gemini API returns raw PCM data without headers, so standard decodeAudioData fails.
+      const dataInt16 = new Int16Array(bytes.buffer);
+      const numChannels = 1;
+      const sampleRate = 24000;
+      
+      const audioBuffer = audioContextRef.current.createBuffer(
+        numChannels, 
+        dataInt16.length, 
+        sampleRate
+      );
+
+      // Convert Int16 to Float32 [-1.0, 1.0]
+      const channelData = audioBuffer.getChannelData(0);
+      for (let i = 0; i < dataInt16.length; i++) {
+        channelData[i] = dataInt16[i] / 32768.0;
+      }
+
+      // 3. Play
       if (audioSourceRef.current) {
         audioSourceRef.current.stop();
       }
@@ -73,6 +93,7 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
 
     } catch (e) {
       console.error("Audio playback error", e);
+      setIsPlaying(false);
     }
   };
 
@@ -109,12 +130,12 @@ const VideoPlayer: React.FC<VideoPlayerProps> = ({
             </div>
           </div>
           <h3 className="text-xl font-semibold text-white mb-2">
-            {processingState === ProcessingState.ANALYZING && "Analyse du contexte..."}
-            {processingState === ProcessingState.TRANSLATING && "Traduction & Synthèse vocale..."}
+            {processingState === ProcessingState.ANALYZING_METADATA && "Analyse du contexte..."}
+            {processingState === ProcessingState.TRANSLATING_FULL && "Traduction & Synthèse vocale..."}
           </h3>
           <p className="text-slate-400 text-sm max-w-xs text-center">
-            {processingState === ProcessingState.ANALYZING && "Détection du ton, de l'argot et des références culturelles."}
-            {processingState === ProcessingState.TRANSLATING && "Génération d'une voix naturelle en français."}
+            {processingState === ProcessingState.ANALYZING_METADATA && "Détection du ton, de l'argot et des références culturelles."}
+            {processingState === ProcessingState.TRANSLATING_FULL && "Génération d'une voix naturelle en français."}
           </p>
         </div>
       )}

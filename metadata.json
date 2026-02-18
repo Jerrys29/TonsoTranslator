@@ -1,5 +1,5 @@
 {
   "name": "Tonso",
-  "description": "Une application de traduction vidéo intelligente en temps réel utilisant Gemini pour une adaptation contextuelle et une synthèse vocale naturelle.",
+  "description": "Plateforme de doublage vidéo IA temps réel avec clonage de voix, support multi-langues et adaptation contextuelle.",
   "requestFramePermissions": []
 }

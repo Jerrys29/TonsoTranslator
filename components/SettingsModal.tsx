@@ -1,5 +1,6 @@
 import React from 'react';
 import { AppSettings } from '../types';
+import { SUPPORTED_LANGUAGES } from '../constants';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -22,35 +23,19 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, settings
         </button>
         
         <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
-          <span className="text-cyan-400">⚡</span> Paramètres Tonso
+          <span className="text-cyan-400">⚡</span> Préférences
         </h2>
 
         <div className="space-y-6">
-          {/* Voice Gender */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-2">Voix Synthétique</label>
-            <div className="flex bg-slate-900 rounded-lg p-1">
-              <button
-                onClick={() => updateSettings({ voiceGender: 'female' })}
-                className={`flex-1 py-2 rounded-md text-sm transition-all ${
-                  settings.voiceGender === 'female' 
-                    ? 'bg-cyan-600 text-white shadow-lg' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Féminine
-              </button>
-              <button
-                onClick={() => updateSettings({ voiceGender: 'male' })}
-                className={`flex-1 py-2 rounded-md text-sm transition-all ${
-                  settings.voiceGender === 'male' 
-                    ? 'bg-indigo-600 text-white shadow-lg' 
-                    : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Masculine
-              </button>
-            </div>
+          
+          <div className="p-3 bg-slate-900 rounded-lg">
+             <p className="text-xs text-slate-500 uppercase font-bold mb-1">Configuration Actuelle</p>
+             <div className="flex justify-between items-center text-slate-300 text-sm">
+                <span>Langue Cible</span>
+                <span className="text-white font-medium">
+                  {SUPPORTED_LANGUAGES.find(l => l.code === settings.targetLanguage)?.name} {SUPPORTED_LANGUAGES.find(l => l.code === settings.targetLanguage)?.flag}
+                </span>
+             </div>
           </div>
 
           {/* Censure Toggle */}

@@ -1,70 +1,77 @@
 import { GoogleGenAI, Modality, Type } from "@google/genai";
-import { AppSettings, AnalysisResult, TranslationResult } from '../types';
-import { GEMINI_TRANSLATION_MODEL, GEMINI_TTS_MODEL } from '../constants';
+import { AppSettings, AnalysisResult, TranslationResult, VoiceOption } from '../types';
+import { GEMINI_TRANSLATION_MODEL, GEMINI_TTS_MODEL, SUPPORTED_LANGUAGES } from '../constants';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
- * Analyzes the context of the video transcript to determine tone and explicit content.
+ * Analyzes the context, detects language and gender for voice cloning.
  */
 export const analyzeContext = async (transcript: string): Promise<AnalysisResult> => {
   try {
     const response = await ai.models.generateContent({
       model: GEMINI_TRANSLATION_MODEL,
-      contents: `Analyze the following video transcript. 
-      1. Determine if it contains explicit language (swearing, offensive terms).
-      2. Summarize the context and tone (e.g., Tech review, casual, energetic).
+      contents: `Analyze this transcript.
+      1. Detect the source language.
+      2. Guess the speaker's gender based on context or vocabulary (default to male if unsure).
+      3. Identify explicit content.
+      4. Summarize tone/context.
       
-      Transcript: "${transcript}"`,
+      Transcript: "${transcript.substring(0, 500)}..."`,
       config: {
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
+            detectedLanguage: { type: Type.STRING },
+            detectedGender: { type: Type.STRING, enum: ['male', 'female'] },
             hasExplicitContent: { type: Type.BOOLEAN },
             contextSummary: { type: Type.STRING },
             tone: { type: Type.STRING },
           },
-          required: ["hasExplicitContent", "contextSummary", "tone"],
+          required: ["detectedLanguage", "detectedGender", "hasExplicitContent", "contextSummary", "tone"],
         },
       },
     });
 
     const result = JSON.parse(response.text || '{}');
     return {
+      detectedLanguage: result.detectedLanguage || "en",
+      detectedGender: (result.detectedGender as 'male' | 'female') || "male",
       hasExplicitContent: result.hasExplicitContent || false,
       contextSummary: result.contextSummary || "General content",
       tone: result.tone || "Neutral",
     };
   } catch (error) {
     console.error("Error analyzing context:", error);
-    return { hasExplicitContent: false, contextSummary: "Unknown", tone: "Neutral" };
+    return { detectedLanguage: "en", detectedGender: "male", hasExplicitContent: false, contextSummary: "Unknown", tone: "Neutral" };
   }
 };
 
 /**
- * Translates the text and generates audio using Gemini.
+ * Core translation and TTS logic. Used for both Preview and Full Video.
  */
 export const processTranslation = async (
-  transcript: string,
+  textToTranslate: string,
   settings: AppSettings,
-  context: AnalysisResult
+  context: AnalysisResult,
+  selectedVoice: VoiceOption
 ): Promise<TranslationResult> => {
   try {
+    const targetLangName = SUPPORTED_LANGUAGES.find(l => l.code === settings.targetLanguage)?.name || "French";
+
     // 1. Contextual Translation
     const prompt = `
-      You are an expert voice-over translator for a YouTube video.
-      Target Audience: French speakers.
+      You are an expert voice-over translator.
+      Target Language: ${targetLangName}.
       Context: ${context.contextSummary}.
       Tone: ${context.tone}.
-      Instruction: Translate the following English transcript to French. 
-      - Make it sound natural and conversational, not robotic.
-      - Match the energy of the original text.
-      - ${settings.censureExplicit ? 'CENSOR explicit words with neutral, polite alternatives.' : 'KEEP the explicit language and slang to maintain authenticity.'}
+      Source Text: "${textToTranslate}"
       
-      Transcript: "${transcript}"
-      
-      Return ONLY the translated text string.
+      Instructions:
+      - Translate naturally, adapting idioms and slang.
+      - ${settings.censureExplicit ? 'CENSOR explicit words (use polite equivalents).' : 'KEEP explicit nuances.'}
+      - Return ONLY the translated text.
     `;
 
     const translationResponse = await ai.models.generateContent({
@@ -75,12 +82,6 @@ export const processTranslation = async (
     const translatedText = translationResponse.text || "";
 
     // 2. TTS Generation
-    // 'Puck' is a good generic voice, 'Kore' is female, 'Fenrir' is deep male.
-    // Mapping rudimentary settings to voices.
-    const voiceName = settings.voiceGender === 'female' ? 'Kore' : 'Fenrir';
-    
-    // Note: Gemini TTS currently generates English very well. 
-    // It supports multi-lingual but for best French prosody we rely on the model's capabilities.
     const ttsResponse = await ai.models.generateContent({
         model: GEMINI_TTS_MODEL,
         contents: [{ parts: [{ text: translatedText }] }],
@@ -88,7 +89,7 @@ export const processTranslation = async (
             responseModalities: [Modality.AUDIO],
             speechConfig: {
                 voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: voiceName },
+                    prebuiltVoiceConfig: { voiceName: selectedVoice.geminiVoiceName },
                 },
             },
         },
@@ -96,11 +97,18 @@ export const processTranslation = async (
 
     const audioBase64 = ttsResponse.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data || null;
 
+    // Calculate duration (PCM 24kHz Mono 16-bit)
+    let duration = 0;
+    if (audioBase64) {
+      const byteLength = (audioBase64.length * 3) / 4; 
+      duration = byteLength / 48000;
+    }
+
     return {
-      originalText: transcript,
+      originalText: textToTranslate,
       translatedText: translatedText,
       audioBase64: audioBase64,
-      duration: 0, // In a real app, we decode the header to get duration
+      duration: duration,
     };
 
   } catch (error) {
@@ -109,7 +117,6 @@ export const processTranslation = async (
   }
 };
 
-// Helper for decoding audio (client-side utility)
 export const decodeAudio = async (base64: string, audioContext: AudioContext): Promise<AudioBuffer> => {
   const binaryString = atob(base64);
   const len = binaryString.length;
@@ -117,5 +124,16 @@ export const decodeAudio = async (base64: string, audioContext: AudioContext): P
   for (let i = 0; i < len; i++) {
     bytes[i] = binaryString.charCodeAt(i);
   }
-  return await audioContext.decodeAudioData(bytes.buffer);
+  
+  const dataInt16 = new Int16Array(bytes.buffer);
+  const numChannels = 1;
+  const sampleRate = 24000;
+  
+  const buffer = audioContext.createBuffer(numChannels, dataInt16.length, sampleRate);
+  const channelData = buffer.getChannelData(0);
+  
+  for (let i = 0; i < dataInt16.length; i++) {
+     channelData[i] = dataInt16[i] / 32768.0;
+  }
+  return buffer;
 };
